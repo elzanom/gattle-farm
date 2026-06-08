@@ -616,6 +616,18 @@ async function harvestLoop() {
 
 function startDashboardServer(port = 3000) {
   const server = http.createServer((req, res) => {
+    // Handle CORS preflight OPTIONS request
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400'
+      });
+      res.end();
+      return;
+    }
+
     // API status
     if (req.method === 'GET' && req.url === '/api/status') {
       res.writeHead(200, { 
@@ -628,6 +640,146 @@ function startDashboardServer(port = 3000) {
         accounts: botState.accounts
       };
       res.end(JSON.stringify(snapshot));
+      return;
+    }
+
+    // POST /api/upgrade
+    if (req.method === 'POST' && req.url === '/api/upgrade') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        res.writeHead(200, { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        });
+        
+        try {
+          const { accountName, animalType } = JSON.parse(body);
+          if (!accountName || !animalType) {
+            res.end(JSON.stringify({ error: 'Parameter accountName dan animalType harus diisi.' }));
+            return;
+          }
+
+          logToAccount(accountName, `Aksi Manual: Upgrade ${animalType}...`);
+          const baseUrl = CONFIG.baseUrl || 'https://www.cattlefarmonly.my.id';
+          const token = loadToken(accountName);
+          if (!token) {
+            res.end(JSON.stringify({ error: 'Token tidak ditemukan. Silakan jalankan bot terlebih dahulu.' }));
+            return;
+          }
+
+          const api = new CattleAPI(baseUrl, null, token);
+          let upg;
+          try {
+            upg = await api.upgradeAnimal(animalType);
+          } catch (err) {
+            if (err.message.includes('401')) {
+              const account = CONFIG.accounts.find(a => a.name === accountName);
+              if (account) {
+                logToAccount(accountName, `Token expired, mencoba reauth untuk upgrade manual...`);
+                const api2 = await authAccount(account);
+                upg = await api2.upgradeAnimal(animalType);
+              } else {
+                throw err;
+              }
+            } else {
+              throw err;
+            }
+          }
+
+          updateStateFromFarmStatus(accountName, upg);
+          botState.accounts[accountName].stats.upgradesCount += 1;
+          saveState();
+          logToAccount(accountName, `Manual upgrade ${animalType} sukses!`);
+          res.end(JSON.stringify({ success: true, status: upg }));
+        } catch (err) {
+          logToAccount(req.url, `Gagal upgrade: ${err.message}`, 'error');
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+    // POST /api/convert
+    if (req.method === 'POST' && req.url === '/api/convert') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        res.writeHead(200, { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        });
+
+        try {
+          const { accountName, animalType, amount } = JSON.parse(body);
+          if (!accountName || !animalType || amount === undefined) {
+            res.end(JSON.stringify({ error: 'Parameter accountName, animalType, dan amount harus diisi.' }));
+            return;
+          }
+
+          const qty = Number(amount);
+          if (isNaN(qty) || qty <= 0) {
+            res.end(JSON.stringify({ error: 'Jumlah konversi harus angka positif.' }));
+            return;
+          }
+
+          logToAccount(accountName, `Aksi Manual: Konversi ${qty} produk ${animalType}...`);
+          const baseUrl = CONFIG.baseUrl || 'https://www.cattlefarmonly.my.id';
+          const token = loadToken(accountName);
+          if (!token) {
+            res.end(JSON.stringify({ error: 'Token tidak ditemukan. Silakan jalankan bot terlebih dahulu.' }));
+            return;
+          }
+
+          const api = new CattleAPI(baseUrl, null, token);
+          let conv;
+          let activeApi = api;
+          
+          try {
+            conv = await api.convertProducts(animalType, qty);
+          } catch (err) {
+            if (err.message.includes('401')) {
+              const account = CONFIG.accounts.find(a => a.name === accountName);
+              if (account) {
+                logToAccount(accountName, `Token expired, mencoba reauth untuk convert manual...`);
+                const api2 = await authAccount(account);
+                activeApi = api2;
+                conv = await api2.convertProducts(animalType, qty);
+              } else {
+                throw err;
+              }
+            } else {
+              throw err;
+            }
+          }
+
+          if (conv) {
+            const earned = conv.usdtEarned || 0;
+            
+            // Segarkan status peternakan dan profil pengguna
+            const [status, userMe] = await Promise.all([
+              activeApi.getFarmStatus(),
+              activeApi.getUserMe().catch(() => null)
+            ]);
+            
+            updateStateFromFarmStatus(accountName, status);
+            if (userMe) {
+              botState.accounts[accountName].balances.usdt = userMe.usdtBalance || 0;
+            }
+            
+            botState.accounts[accountName].stats.conversionsCount += 1;
+            botState.accounts[accountName].stats.usdtEarned += earned;
+            saveState();
+            logToAccount(accountName, `Manual convert ${qty} ${animalType} sukses! (+${earned} USDT)`);
+            res.end(JSON.stringify({ success: true, convertResult: conv }));
+          } else {
+            res.end(JSON.stringify({ error: 'Gagal melakukan konversi produk. Kemungkinan API salah.' }));
+          }
+        } catch (err) {
+          logToAccount(req.url, `Gagal convert: ${err.message}`, 'error');
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
       return;
     }
     

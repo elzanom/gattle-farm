@@ -635,6 +635,59 @@
         overflow-y: visible;
       }
     }
+
+    /* Animal Card Action Buttons */
+    .animal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .btn-action {
+      flex: 1;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: 'Outfit', sans-serif;
+      text-transform: uppercase;
+      color: var(--text-main);
+      outline: none;
+    }
+
+    .btn-upgrade {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+
+    .btn-upgrade:hover:not(:disabled) {
+      background: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
+      border-color: var(--primary);
+    }
+
+    .btn-convert {
+      background: rgba(6, 182, 212, 0.12);
+      border-color: rgba(6, 182, 212, 0.25);
+    }
+
+    .btn-convert:hover:not(:disabled) {
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan-glow);
+      border-color: var(--cyan);
+    }
+
+    .btn-action:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -1023,6 +1076,14 @@
               <div class="progress-bar-fill" id="bar-${timerId}"></div>
             </div>
           </div>
+          <div class="animal-actions">
+            <button class="btn-action btn-upgrade" id="btn-up-${timerId}" onclick="performUpgrade('${animalName}', '${timerId}')" ${(account.balances?.coin || 0) < 50 ? 'disabled' : ''}>
+              Upgrade
+            </button>
+            <button class="btn-action btn-convert" id="btn-conv-${timerId}" onclick="performConvert('${animalName}', ${pet.balance || 0}, '${timerId}')" ${!pet.balance ? 'disabled' : ''}>
+              Convert
+            </button>
+          </div>
         `;
         animsContainer.appendChild(card);
       });
@@ -1048,6 +1109,88 @@
         });
       } else {
         logsContainer.innerHTML = '<div class="no-logs">Belum ada aktivitas tercatat.</div>';
+      }
+    }
+
+    // Aksi manual upgrade hewan
+    async function performUpgrade(animalName, timerId) {
+      if (!selectedAccount) return;
+      const btn = document.getElementById(`btn-up-${timerId}`);
+      let originalText = "Upgrade";
+      if (btn) {
+        originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "Proses...";
+      }
+
+      try {
+        const response = await fetch('/api/upgrade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountName: selectedAccount, animalType: animalName })
+        });
+        const res = await response.json();
+        if (res.error) {
+          alert(`Gagal upgrade: ${res.error}`);
+        } else {
+          // Segarkan status dashboard langsung
+          await fetchStatus();
+        }
+      } catch (err) {
+        alert(`Error koneksi: ${err.message}`);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = originalText;
+        }
+      }
+    }
+
+    // Aksi manual konversi produk hewan
+    async function performConvert(animalName, maxAmount, timerId) {
+      if (!selectedAccount) return;
+      if (maxAmount <= 0) {
+        alert("Tidak ada produk untuk dikonversi!");
+        return;
+      }
+
+      const input = prompt(`Masukkan jumlah produk ${animalName} yang ingin dikonversi ke USDT (Maksimal: ${maxAmount}):`, maxAmount);
+      if (input === null) return; // Klik Batal (cancel)
+
+      const amount = Number(input);
+      if (isNaN(amount) || amount <= 0 || amount > maxAmount) {
+        alert("Masukkan jumlah angka konversi yang valid!");
+        return;
+      }
+
+      const btn = document.getElementById(`btn-conv-${timerId}`);
+      let originalText = "Convert";
+      if (btn) {
+        originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "Proses...";
+      }
+
+      try {
+        const response = await fetch('/api/convert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountName: selectedAccount, animalType: animalName, amount })
+        });
+        const res = await response.json();
+        if (res.error) {
+          alert(`Gagal konversi: ${res.error}`);
+        } else {
+          // Segarkan status dashboard langsung
+          await fetchStatus();
+        }
+      } catch (err) {
+        alert(`Error koneksi: ${err.message}`);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = originalText;
+        }
       }
     }
 
