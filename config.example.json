@@ -2,6 +2,7 @@
   "baseUrl": "https://www.cattlefarmonly.my.id",
   "botUsername": "cattlefarmonly12_bot",
   "intervalMinutes": 60,
+  "dashboardPort": 3000,
   "accounts": [
     {
       "name": "Account 1",

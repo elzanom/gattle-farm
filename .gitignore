@@ -18,3 +18,7 @@ yarn-error.log*
 # System files
 .DS_Store
 Thumbs.db
+
+# Dashboard state persistence
+dashboard_state.json
+

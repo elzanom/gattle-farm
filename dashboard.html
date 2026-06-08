@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cattle Farm Control Center</title>
+  <!-- Google Fonts: Outfit & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-dark: #08090d;
+      --bg-panel: rgba(17, 19, 28, 0.7);
+      --border-color: rgba(255, 255, 255, 0.06);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.15);
+      --cyan: #06b6d4;
+      --cyan-glow: rgba(6, 182, 212, 0.15);
+      --purple: #a855f7;
+      --purple-glow: rgba(168, 85, 247, 0.15);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --active-card: rgba(255, 255, 255, 0.05);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 10% 20%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+        radial-gradient(at 90% 80%, rgba(168, 85, 247, 0.08) 0px, transparent 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 24px;
+      background: rgba(8, 9, 13, 0.85);
+      border-bottom: 1px solid var(--border-color);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      font-size: 24px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+    }
+
+    .uptime-badge {
+      background: var(--border-color);
+      padding: 5px 10px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Container Utama */
+    .dashboard-container {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      flex: 1;
+      height: calc(100vh - 61px);
+      overflow: hidden;
+    }
+
+    /* Sidebar (Daftar Akun) */
+    .sidebar {
+      background: rgba(12, 14, 23, 0.5);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 16px;
+      gap: 12px;
+    }
+
+    .sidebar-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      padding-left: 8px;
+    }
+
+    .account-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .account-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .account-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      width: 4px;
+      background: var(--primary);
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+
+    .account-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      transform: translateY(-1px);
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .account-item.active {
+      background: var(--active-card);
+      border-color: rgba(99, 102, 241, 0.5);
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+
+    .account-item.active::before {
+      opacity: 1;
+    }
+
+    .account-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .account-name {
+      font-weight: 600;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+
+    .status-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 100px;
+      font-weight: 600;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-active { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .status-active .status-dot { background: var(--success); animation: pulse 1.5s infinite; }
+
+    .status-authenticating { background: rgba(168, 85, 247, 0.15); color: var(--purple); }
+    .status-authenticating .status-dot { background: var(--purple); animation: pulse 1.5s infinite; }
+
+    .status-idle { background: rgba(156, 163, 175, 0.15); color: var(--text-muted); }
+    .status-idle .status-dot { background: var(--text-muted); }
+
+    .status-error { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+    .status-error .status-dot { background: var(--danger); }
+
+    .account-item-body {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .account-coin-preview {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      color: var(--warning);
+      font-weight: 500;
+    }
+
+    /* Panel Detail */
+    .detail-panel {
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    /* Global Summary Grid */
+    .global-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      backdrop-filter: blur(10px);
+    }
+
+    .summary-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .icon-ads { background: var(--purple-glow); color: var(--purple); }
+    .icon-coin { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+    .icon-usdt { background: var(--cyan-glow); color: var(--cyan); }
+    .icon-accounts { background: var(--primary-glow); color: var(--primary); }
+
+    .summary-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .summary-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .summary-value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    /* Grid Area Detail per Akun */
+    .account-detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .main-detail-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .panel-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 18px;
+      backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Balances Section */
+    .balances-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .balance-subcard {
+      background: rgba(255, 255, 255, 0.015);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .balance-label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .balance-value {
+      font-size: 16px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .balance-coin { color: var(--warning); }
+    .balance-rupiah { color: var(--success); }
+    .balance-usdt { color: var(--cyan); }
+
+    /* Animals (Pet Farm) Grid */
+    .animals-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .animal-card {
+      background: rgba(255, 255, 255, 0.015);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .animal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .animal-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .animal-avatar {
+      font-size: 20px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .animal-meta {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .animal-name {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .animal-level {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .animal-balance {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .timer-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .timer-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .timer-countdown {
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .timer-countdown.ready {
+      color: var(--success);
+    }
+
+    .progress-bar-container {
+      height: 5px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--primary), var(--purple));
+      border-radius: 100px;
+      transition: width 1s linear;
+    }
+
+    .progress-bar-fill.ready {
+      background: var(--success);
+      width: 100% !important;
+    }
+
+    /* Logs & Stats Panel */
+    .stats-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Mini Stats Grid */
+    .mini-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .mini-stat-item {
+      background: rgba(255, 255, 255, 0.015);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .mini-stat-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .mini-stat-val {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    /* Console Logs */
+    .console-logs-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .console-container {
+      background: #06070a;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 8px;
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 200px;
+    }
+
+    .log-line {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.01);
+      padding-bottom: 3px;
+    }
+
+    .log-time {
+      color: #585858;
+      flex-shrink: 0;
+    }
+
+    .log-msg {
+      word-break: break-all;
+    }
+
+    .log-info { color: #81a1c1; }
+    .log-warn { color: #ebcb8b; }
+    .log-error { color: #bf616a; }
+    .log-success { color: #a3be8c; }
+
+    .no-logs {
+      color: var(--text-muted);
+      text-align: center;
+      margin: auto;
+      font-style: italic;
+    }
+
+    .no-account-selected {
+      text-align: center;
+      margin: auto;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 40px;
+    }
+
+    .no-account-icon {
+      font-size: 40px;
+      opacity: 0.5;
+    }
+
+    /* Animations */
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+      70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .dashboard-container {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+      }
+      .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        max-height: 250px;
+      }
+      .account-list {
+        flex-direction: row;
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+      .account-item {
+        flex-shrink: 0;
+        width: 200px;
+      }
+      .account-detail-grid {
+        grid-template-columns: 1fr;
+      }
+      .detail-panel {
+        overflow-y: visible;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-section">
+      <span class="logo-icon">🌾</span>
+      <h1>Cattle Farm Control Center</h1>
+    </div>
+    <div class="system-status">
+      <span id="uptime-label">Uptime: --:--:--</span>
+      <span class="uptime-badge" id="uptime-value">00h 00m 00s</span>
+    </div>
+  </header>
+
+  <div class="dashboard-container">
+    <!-- Sidebar: Daftar Akun -->
+    <aside class="sidebar">
+      <div class="sidebar-title">Daftar Akun</div>
+      <div class="account-list" id="sidebar-accounts">
+        <!-- Akun diisi dinamis -->
+      </div>
+    </aside>
+
+    <!-- Panel Detail -->
+    <main class="detail-panel" id="main-panel">
+      <!-- Global Summary Stats -->
+      <div class="global-summary">
+        <div class="summary-card">
+          <div class="summary-icon icon-accounts">👤</div>
+          <div class="summary-info">
+            <span class="summary-label">Total Akun</span>
+            <span class="summary-value" id="global-total-accounts">0</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-icon icon-ads">📺</div>
+          <div class="summary-info">
+            <span class="summary-label">Total Klaim Iklan</span>
+            <span class="summary-value" id="global-total-ads">0</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-icon icon-coin">🪙</div>
+          <div class="summary-info">
+            <span class="summary-label">Total Koin Akun</span>
+            <span class="summary-value" id="global-total-coins">0</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-icon icon-usdt">💵</div>
+          <div class="summary-info">
+            <span class="summary-label">Total Pendapatan USDT</span>
+            <span class="summary-value" id="global-total-usdt">0.00000</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail Akun Aktif -->
+      <div class="account-detail-grid" id="detail-grid" style="display: none;">
+        <!-- Kolom Utama: Saldo dan Status Hewan -->
+        <div class="main-detail-column">
+          <!-- Saldo Card -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title" id="active-acc-title">Nama Akun</div>
+              <div id="active-acc-status-badge"></div>
+            </div>
+            <div class="balances-row">
+              <div class="balance-subcard">
+                <span class="balance-label">Koin Saldo</span>
+                <span class="balance-value balance-coin" id="active-coin-val">0</span>
+              </div>
+              <div class="balance-subcard">
+                <span class="balance-label">Rupiah Saldo</span>
+                <span class="balance-value balance-rupiah" id="active-rupiah-val">Rp 0</span>
+              </div>
+              <div class="balance-subcard">
+                <span class="balance-label">USDT Saldo</span>
+                <span class="balance-value balance-usdt" id="active-usdt-val">0.00000</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pet Farm Status -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">🐾 Status Peternakan Hewan</div>
+            </div>
+            <div class="animals-grid" id="animals-container">
+              <!-- Hewan diisi dinamis -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Kolom Kanan: Statistik Tambahan dan Konsol Log -->
+        <div class="stats-column">
+          <!-- Statistik Akun Card -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">📊 Statistik Akun</div>
+            </div>
+            <div class="mini-stats-grid">
+              <div class="mini-stat-item">
+                <span class="mini-stat-label">Iklan Diklaim</span>
+                <span class="mini-stat-val" id="active-stat-ads">0</span>
+              </div>
+              <div class="mini-stat-item">
+                <span class="mini-stat-label">Siklus Panen</span>
+                <span class="mini-stat-val" id="active-stat-harvests">0</span>
+              </div>
+              <div class="mini-stat-item">
+                <span class="mini-stat-label">Daily Coin</span>
+                <span class="mini-stat-val" id="active-stat-daily">0</span>
+              </div>
+              <div class="mini-stat-item">
+                <span class="mini-stat-label">Auto Upgrade</span>
+                <span class="mini-stat-val" id="active-stat-upgrades">0</span>
+              </div>
+              <div class="mini-stat-item" style="grid-column: span 2;">
+                <span class="mini-stat-label">Estimasi Konversi USDT</span>
+                <span class="mini-stat-val balance-usdt" id="active-stat-usdt-earned">0.00000</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Console Live Logs -->
+          <div class="panel-card console-logs-card">
+            <div class="panel-header">
+              <div class="panel-title">📟 Log Aktivitas Real-time</div>
+            </div>
+            <div class="console-container" id="logs-container">
+              <!-- Log diisi dinamis -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tampilan Jika Belum Ada Akun -->
+      <div id="no-account-selected-view" class="no-account-selected">
+        <div class="no-account-icon">🔌</div>
+        <h3>Tidak Ada Akun Terpilih</h3>
+        <p>Silakan pilih akun dari daftar di sebelah kiri untuk melihat status detail.</p>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    let selectedAccount = null;
+    let localData = null;
+    let countdownTimers = {};
+
+    // Helper formatting rupiah
+    function formatRupiah(num) {
+      if (num === undefined || num === null) return 'Rp 0';
+      return 'Rp ' + Number(num).toLocaleString('id-ID');
+    }
+
+    // Hitung sisa waktu mundur
+    function updateCountdowns() {
+      if (!localData || !localData.accounts) return;
+
+      Object.keys(localData.accounts).forEach(accName => {
+        const account = localData.accounts[accName];
+        if (!account.animals) return;
+
+        Object.keys(account.animals).forEach(animalName => {
+          const pet = account.animals[animalName];
+          const timerId = `${accName}_${animalName}`;
+          
+          const timerValueEl = document.getElementById(`timer-${timerId}`);
+          const fillBarEl = document.getElementById(`bar-${timerId}`);
+
+          if (!timerValueEl || !fillBarEl) return;
+
+          // Periksa apakah status siap panen
+          if (pet.isReady || !pet.nextClaimAt) {
+            timerValueEl.innerText = "SIAP PANEN";
+            timerValueEl.className = "timer-countdown ready";
+            fillBarEl.className = "progress-bar-fill ready";
+            return;
+          }
+
+          const targetTime = new Date(pet.nextClaimAt).getTime();
+          const now = Date.now();
+          const diff = targetTime - now;
+
+          if (diff <= 0) {
+            timerValueEl.innerText = "SIAP PANEN";
+            timerValueEl.className = "timer-countdown ready";
+            fillBarEl.className = "progress-bar-fill ready";
+          } else {
+            // Hitung menit & detik
+            const totalSec = Math.floor(diff / 1000);
+            const m = Math.floor(totalSec / 60);
+            const s = totalSec % 60;
+            const timeStr = `${m}m ${s}s`;
+
+            timerValueEl.innerText = timeStr;
+            timerValueEl.className = "timer-countdown";
+            fillBarEl.className = "progress-bar-fill";
+            
+            // Hitung persentase durasi (Cattle farm claim itu per 60 menit)
+            // Kita hitung mundur dari max 3600 detik
+            const maxDuration = 3600;
+            const elapsed = Math.max(0, maxDuration - totalSec);
+            const percent = Math.min(100, (elapsed / maxDuration) * 100);
+            fillBarEl.style.width = `${percent}%`;
+          }
+        });
+      });
+    }
+
+    // Dapatkan data status terupdate dari server
+    async function fetchStatus() {
+      try {
+        const response = await fetch('/api/status');
+        if (!response.ok) throw new Error('Network response not ok');
+        const data = await response.json();
+        localData = data;
+        
+        updateSystemHeader(data);
+        renderAccountList(data.accounts);
+        renderGlobalStats(data.accounts);
+
+        // Set default selected account jika belum ada
+        if (!selectedAccount && Object.keys(data.accounts).length > 0) {
+          selectedAccount = Object.keys(data.accounts)[0];
+        }
+
+        if (selectedAccount && data.accounts[selectedAccount]) {
+          renderActiveAccount(selectedAccount, data.accounts[selectedAccount]);
+        }
+      } catch (err) {
+        console.error('Gagal memuat status dari API:', err);
+      }
+    }
+
+    // Tampilkan Uptime di Header
+    function updateSystemHeader(data) {
+      const ms = data.uptime || 0;
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      
+      const pad = (n) => String(n).padStart(2, '0');
+      document.getElementById('uptime-value').innerText = `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+    }
+
+    // Render daftar akun di sidebar
+    function renderAccountList(accounts) {
+      const listContainer = document.getElementById('sidebar-accounts');
+      listContainer.innerHTML = '';
+
+      Object.keys(accounts).forEach(name => {
+        const acc = accounts[name];
+        
+        const item = document.createElement('div');
+        item.className = `account-item ${name === selectedAccount ? 'active' : ''}`;
+        item.onclick = () => selectAccount(name);
+
+        let statusClass = 'status-idle';
+        if (acc.status === 'active') statusClass = 'status-active';
+        else if (acc.status === 'authenticating') statusClass = 'status-authenticating';
+        else if (acc.status === 'error') statusClass = 'status-error';
+
+        item.innerHTML = `
+          <div class="account-item-header">
+            <span class="account-name" title="${name}">${name}</span>
+            <span class="status-badge ${statusClass}">
+              <span class="status-dot"></span>
+              ${acc.status}
+            </span>
+          </div>
+          <div class="account-item-body">
+            <span class="account-coin-preview">🪙 ${acc.balances?.coin?.toLocaleString('id-ID') || 0}</span>
+            <span>$ ${acc.balances?.usdt?.toFixed(4) || '0.0000'}</span>
+          </div>
+        `;
+        listContainer.appendChild(item);
+      });
+    }
+
+    // Render Global stats di baris paling atas
+    function renderGlobalStats(accounts) {
+      let totalAccounts = Object.keys(accounts).length;
+      let totalAds = 0;
+      let totalCoins = 0;
+      let totalUsdt = 0;
+
+      Object.keys(accounts).forEach(name => {
+        const acc = accounts[name];
+        totalAds += acc.stats?.adsClaimed || 0;
+        totalCoins += acc.balances?.coin || 0;
+        totalUsdt += acc.balances?.usdt || 0;
+      });
+
+      document.getElementById('global-total-accounts').innerText = totalAccounts;
+      document.getElementById('global-total-ads').innerText = totalAds.toLocaleString('id-ID');
+      document.getElementById('global-total-coins').innerText = totalCoins.toLocaleString('id-ID');
+      document.getElementById('global-total-usdt').innerText = totalUsdt.toFixed(5);
+    }
+
+    // Ganti akun yang sedang aktif dipantau
+    function selectAccount(name) {
+      selectedAccount = name;
+      const activeEl = document.querySelector('.account-item.active');
+      if (activeEl) activeEl.classList.remove('active');
+      
+      // Ambil elemen yang di-klik
+      const items = document.querySelectorAll('.account-item');
+      items.forEach(el => {
+        if (el.querySelector('.account-name').innerText === name) {
+          el.classList.add('active');
+        }
+      });
+
+      if (localData && localData.accounts[name]) {
+        renderActiveAccount(name, localData.accounts[name]);
+      }
+    }
+
+    // Tampilkan detail akun aktif
+    function renderActiveAccount(name, account) {
+      document.getElementById('no-account-selected-view').style.display = 'none';
+      document.getElementById('detail-grid').style.display = 'grid';
+
+      // Judul dan Status Badge
+      document.getElementById('active-acc-title').innerText = name;
+      
+      let statusClass = 'status-idle';
+      if (account.status === 'active') statusClass = 'status-active';
+      else if (account.status === 'authenticating') statusClass = 'status-authenticating';
+      else if (account.status === 'error') statusClass = 'status-error';
+
+      document.getElementById('active-acc-status-badge').innerHTML = `
+        <span class="status-badge ${statusClass}">
+          <span class="status-dot"></span>
+          ${account.status}
+        </span>
+      `;
+
+      // Detail Saldo
+      document.getElementById('active-coin-val').innerText = account.balances?.coin?.toLocaleString('id-ID') || 0;
+      document.getElementById('active-rupiah-val').innerText = formatRupiah(account.balances?.rupiah);
+      document.getElementById('active-usdt-val').innerText = account.balances?.usdt?.toFixed(5) || '0.00000';
+
+      // Detail Mini Statistik Akun
+      document.getElementById('active-stat-ads').innerText = account.stats?.adsClaimed || 0;
+      document.getElementById('active-stat-harvests').innerText = account.stats?.harvestsClaimed || 0;
+      document.getElementById('active-stat-daily').innerText = account.stats?.dailyCoinClaimed || 0;
+      document.getElementById('active-stat-upgrades').innerText = account.stats?.upgradesCount || 0;
+      document.getElementById('active-stat-usdt-earned').innerText = (account.stats?.usdtEarned || 0).toFixed(5);
+
+      // Render Hewan-Hewan
+      const animsContainer = document.getElementById('animals-container');
+      animsContainer.innerHTML = '';
+
+      const avatars = { cow: '🐄', goat: '🐐', duck: '🦆', chicken: '🐓' };
+
+      Object.keys(account.animals).forEach(animalName => {
+        const pet = account.animals[animalName];
+        const timerId = `${name}_${animalName}`;
+
+        const card = document.createElement('div');
+        card.className = 'animal-card';
+        
+        card.innerHTML = `
+          <div class="animal-header">
+            <div class="animal-info">
+              <div class="animal-avatar">${avatars[animalName] || '🐾'}</div>
+              <div class="animal-meta">
+                <span class="animal-name">${animalName}</span>
+                <span class="animal-level">Level ${pet.level}</span>
+              </div>
+            </div>
+            <span class="animal-balance">${pet.balance} pcs</span>
+          </div>
+          <div class="timer-section">
+            <div class="timer-meta">
+              <span>Siklus Panen</span>
+              <span class="timer-countdown" id="timer-${timerId}">Menghitung...</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" id="bar-${timerId}"></div>
+            </div>
+          </div>
+        `;
+        animsContainer.appendChild(card);
+      });
+
+      // Render Console Logs
+      const logsContainer = document.getElementById('logs-container');
+      logsContainer.innerHTML = '';
+
+      if (account.logs && account.logs.length > 0) {
+        account.logs.forEach(log => {
+          let logClass = 'log-info';
+          if (log.level === 'error') logClass = 'log-error';
+          else if (log.level === 'warn') logClass = 'log-warn';
+          else if (log.message.includes('✓') || log.message.includes('✅') || log.message.includes('sukses')) logClass = 'log-success';
+
+          const line = document.createElement('div');
+          line.className = 'log-line';
+          line.innerHTML = `
+            <span class="log-time">[${log.time}]</span>
+            <span class="log-msg ${logClass}">${log.message}</span>
+          `;
+          logsContainer.appendChild(line);
+        });
+      } else {
+        logsContainer.innerHTML = '<div class="no-logs">Belum ada aktivitas tercatat.</div>';
+      }
+    }
+
+    // Inisialisasi awal dan setup timer
+    window.addEventListener('load', () => {
+      fetchStatus();
+      
+      // Polling dari API setiap 2 detik
+      setInterval(fetchStatus, 2000);
+
+      // Jalankan update waktu mundur setiap 1 detik
+      setInterval(updateCountdowns, 1000);
+    });
+  </script>
+</body>
+</html>

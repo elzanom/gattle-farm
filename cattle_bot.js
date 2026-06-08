@@ -6,7 +6,7 @@
  *  - harvestLoop(): claim harvest + upgrade + convert tiap 60 menit
  *
  * Mode:
- *   node cattle_bot.js                    → ads + harvest concurrent
+ *   node cattle_bot.js                    → ads + harvest concurrent + Dashboard Server
  *   node cattle_bot.js --once             → 1x harvest cycle, exit
  *   node cattle_bot.js --dry-run          → baca status saja
  *   node cattle_bot.js --reauth [name]    → refresh token
@@ -14,6 +14,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
 import pino from 'pino';
 import { CattleAPI } from './cattle_api.js';
 import { loginTelegram, getInitData } from './telegram_client.js';
@@ -33,9 +34,131 @@ const logger = pino({
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(DIR, 'config.json');
 const TOKEN_DIR = path.join(DIR, 'tokens');
+const STATE_FILE = path.join(DIR, 'dashboard_state.json');
 const CONFIG = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
 
 if (!existsSync(TOKEN_DIR)) mkdirSync(TOKEN_DIR, { recursive: true });
+
+// ── Live State Tracking ──
+
+const botState = {
+  startedAt: new Date().toISOString(),
+  accounts: {}
+};
+
+function initAccountState(name) {
+  if (!botState.accounts[name]) {
+    botState.accounts[name] = {
+      name,
+      status: 'idle', // 'idle' | 'authenticating' | 'active' | 'error'
+      balances: { coin: 0, rupiah: 0, usdt: 0 },
+      animals: {
+        cow: { level: 0, balance: 0, nextClaimAt: null, isReady: false },
+        goat: { level: 0, balance: 0, nextClaimAt: null, isReady: false },
+        duck: { level: 0, balance: 0, nextClaimAt: null, isReady: false },
+        chicken: { level: 0, balance: 0, nextClaimAt: null, isReady: false }
+      },
+      stats: {
+        adsClaimed: 0,
+        harvestsClaimed: 0,
+        dailyCoinClaimed: 0,
+        upgradesCount: 0,
+        conversionsCount: 0,
+        usdtEarned: 0
+      },
+      logs: [],
+      lastActiveAt: null,
+      error: null
+    };
+  }
+}
+
+function updateStateFromFarmStatus(name, status) {
+  initAccountState(name);
+  const acc = botState.accounts[name];
+  if (status.coinBalance !== undefined) acc.balances.coin = status.coinBalance;
+  if (status.rupiahBalance !== undefined) acc.balances.rupiah = status.rupiahBalance;
+
+  if (status.levels) {
+    for (const animal of ['cow', 'goat', 'duck', 'chicken']) {
+      const lvlKey = `${animal}Level`;
+      if (status.levels[lvlKey] !== undefined) {
+        acc.animals[animal].level = status.levels[lvlKey];
+      }
+    }
+  }
+
+  if (status.balances) {
+    for (const animal of ['cow', 'goat', 'duck', 'chicken']) {
+      const balKey = animal === 'duck' || animal === 'chicken' ? `${animal}EggBalance` : `${animal}MilkBalance`;
+      if (status.balances[balKey] !== undefined) {
+        acc.animals[animal].balance = status.balances[balKey];
+      }
+    }
+  }
+
+  if (status.timers) {
+    for (const t of status.timers) {
+      const animal = t.animalType;
+      if (acc.animals[animal]) {
+        acc.animals[animal].isReady = t.isReady;
+        acc.animals[animal].nextClaimAt = t.nextClaimAt;
+      }
+    }
+  }
+}
+
+function logToAccount(name, message, level = 'info') {
+  initAccountState(name);
+  const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  botState.accounts[name].logs.unshift({ time, message, level });
+  if (botState.accounts[name].logs.length > 50) {
+    botState.accounts[name].logs.pop();
+  }
+  botState.accounts[name].lastActiveAt = new Date().toISOString();
+
+  // Print ke console terminal juga
+  if (level === 'error') {
+    logger.error(`[${name}] ${message}`);
+  } else if (level === 'warn') {
+    logger.warn(`[${name}] ${message}`);
+  } else {
+    logger.info(`[${name}] ${message}`);
+  }
+}
+
+function loadState() {
+  try {
+    if (existsSync(STATE_FILE)) {
+      const data = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+      if (data && data.accounts) {
+        for (const name in data.accounts) {
+          initAccountState(name);
+          botState.accounts[name].stats = {
+            ...botState.accounts[name].stats,
+            ...data.accounts[name].stats
+          };
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('Failed to load dashboard_state.json, starting fresh stats.');
+  }
+}
+
+function saveState() {
+  try {
+    const dataToSave = { accounts: {} };
+    for (const name in botState.accounts) {
+      dataToSave.accounts[name] = {
+        stats: botState.accounts[name].stats
+      };
+    }
+    writeFileSync(STATE_FILE, JSON.stringify(dataToSave, null, 2));
+  } catch (err) {
+    logger.error('Failed to save dashboard_state.json');
+  }
+}
 
 // ── CLI ──
 
@@ -107,33 +230,56 @@ function buildUpgradePriority(rates) {
 // ── Auth ──
 
 async function authAccount(account) {
-  const { name, apiId, apiHash } = account;
+  const { name } = account;
+  initAccountState(name);
+  botState.accounts[name].status = 'authenticating';
+  
   const botUsername = CONFIG.botUsername || 'cattlefarmonly12_bot';
   const baseUrl = CONFIG.baseUrl || 'https://www.cattlefarmonly.my.id';
 
-  logger.info(`[${name}] Auth via Telegram...`);
-  const tgClient = await loginTelegram(account);
-  logger.info(`[${name}] Ambil initData dari @${botUsername}...`);
-  const initData = await getInitData(tgClient, botUsername, baseUrl);
+  logToAccount(name, 'Auth via Telegram...');
+  let tgClient;
+  try {
+    tgClient = await loginTelegram(account);
+    logToAccount(name, `Ambil initData dari @${botUsername}...`);
+    const initData = await getInitData(tgClient, botUsername, baseUrl);
 
-  const api = new CattleAPI(baseUrl);
-  const userData = await api.authenticate(initData);
-  saveToken(name, api.token);
-  logger.info(`[${name}] ✅ JWT tersimpan (user ID: ${userData.user?.id})`);
+    const api = new CattleAPI(baseUrl);
+    const userData = await api.authenticate(initData);
+    saveToken(name, api.token);
+    
+    // Update state
+    botState.accounts[name].status = 'active';
+    botState.accounts[name].error = null;
+    if (userData.user) {
+      botState.accounts[name].balances.usdt = userData.user.usdtBalance || 0;
+    }
+    
+    logToAccount(name, `✅ JWT tersimpan (user ID: ${userData.user?.id || '?'})`);
 
-  await tgClient.disconnect();
-  return api;
+    await tgClient.disconnect();
+    return api;
+  } catch (err) {
+    botState.accounts[name].status = 'error';
+    botState.accounts[name].error = err.message;
+    logToAccount(name, `❌ Auth gagal: ${err.message}`, 'error');
+    if (tgClient) {
+      try { await tgClient.disconnect(); } catch {}
+    }
+    throw err;
+  }
 }
 
 // ── Full cycle per account ──
 
 async function processAccount(account) {
   const { name } = account;
+  initAccountState(name);
   const baseUrl = CONFIG.baseUrl || 'https://www.cattlefarmonly.my.id';
   const token = loadToken(name);
 
   if (!token) {
-    logger.info(`[${name}] Belum ada token — auth dulu...`);
+    logToAccount(name, 'Belum ada token — auth dulu...');
     const api = await authAccount(account);
     return await fullCycle(api, name);
   }
@@ -141,17 +287,20 @@ async function processAccount(account) {
   const api = new CattleAPI(baseUrl, null, token);
 
   try {
+    botState.accounts[name].status = 'active';
     const result = await fullCycle(api, name);
     saveToken(name, api.token);
     return result;
   } catch (err) {
     if (err.message.includes('401')) {
-      logger.info(`[${name}] Token expired — reauth...`);
+      logToAccount(name, 'Token expired — reauth...');
       const api2 = await authAccount(account);
       const result = await fullCycle(api2, name);
       saveToken(name, api2.token);
       return result;
     }
+    botState.accounts[name].status = 'error';
+    botState.accounts[name].error = err.message;
     throw err;
   }
 }
@@ -174,10 +323,14 @@ async function fullCycle(api, accountName) {
   try {
     const dc = await api.claimDailyCoin();
     result.dailyCoin = { claimed: true, amount: dc.coinClaimed, balance: dc.newBalance };
-    logger.info(`[${accountName}] 🪙 Daily coin: +${dc.coinClaimed} (balance: ${dc.newBalance})`);
+    logToAccount(accountName, `🪙 Daily coin: +${dc.coinClaimed} (balance: ${dc.newBalance})`);
+    
+    botState.accounts[accountName].balances.coin = dc.newBalance;
+    botState.accounts[accountName].stats.dailyCoinClaimed += 1;
+    saveState();
   } catch (e) {
     result.dailyCoin = { claimed: false, reason: e.message.slice(0, 100) };
-    logger.info(`[${accountName}] 🪙 Daily coin: ${e.message.slice(0, 80)}`);
+    logToAccount(accountName, `🪙 Daily coin: ${e.message.slice(0, 80)}`);
   }
 
   // ── 2. ADS CLAIM (handled by separate adsLoop — skip disini) ──
@@ -185,6 +338,7 @@ async function fullCycle(api, accountName) {
 
   // ── 3. GET FARM STATUS ──
   let status = await api.getFarmStatus();
+  updateStateFromFarmStatus(accountName, status);
   const timers = status.timers || [];
   result.state = status;
 
@@ -193,17 +347,27 @@ async function fullCycle(api, accountName) {
     const { animalType, isReady, nextClaimAt } = t;
 
     if (isReady) {
-      const res = await api.claimAnimal(animalType);
-      const lvlKey = `${animalType}Level`;
-      const eggKey = `${animalType}EggBalance`;
-      const milkKey = `${animalType}MilkBalance`;
-      result.harvest.claimed.push({
-        animal: animalType,
-        level: res.levels?.[lvlKey],
-        product: res.balances?.[eggKey] ?? res.balances?.[milkKey] ?? 0,
-      });
-      status = res; // update status terbaru
-      result.state = res;
+      try {
+        const res = await api.claimAnimal(animalType);
+        updateStateFromFarmStatus(accountName, res);
+        
+        const lvlKey = `${animalType}Level`;
+        const eggKey = `${animalType}EggBalance`;
+        const milkKey = `${animalType}MilkBalance`;
+        result.harvest.claimed.push({
+          animal: animalType,
+          level: res.levels?.[lvlKey],
+          product: res.balances?.[eggKey] ?? res.balances?.[milkKey] ?? 0,
+        });
+        
+        botState.accounts[accountName].stats.harvestsClaimed += 1;
+        saveState();
+        
+        status = res; // update status terbaru
+        result.state = res;
+      } catch (e) {
+        logToAccount(accountName, `❌ Panen ${animalType} gagal: ${e.message.slice(0, 60)}`, 'error');
+      }
     } else {
       result.harvest.skipped.push({ animal: animalType, nextClaimAt });
     }
@@ -225,22 +389,29 @@ async function fullCycle(api, accountName) {
       const currentLevel = levels[lvlKey] ?? 0;
 
       // Batasi upgrade: jangan upgrade kalo total coin nanti < 200 (sisakan buffer)
-      if (coinBalance < 200) break;
+      if (status.coinBalance < 200) break;
 
       try {
         const upg = await api.upgradeAnimal(animal);
+        updateStateFromFarmStatus(accountName, upg);
+        
         const newLevel = upg.levels?.[lvlKey] ?? currentLevel;
         result.upgrades.push({
           animal,
           fromLevel: currentLevel,
           toLevel: newLevel,
         });
-        logger.info(`[${accountName}] ⬆ ${animal} ↑ level ${currentLevel} → ${newLevel}`);
+        logToAccount(accountName, `⬆ ${animal} ↑ level ${currentLevel} → ${newLevel}`);
+        
+        botState.accounts[accountName].stats.upgradesCount += 1;
+        saveState();
+        
         // update coin balance untuk iterasi berikutnya
         levels[lvlKey] = newLevel;
+        status = upg;
       } catch (e) {
         // Gagal upgrade (mungkin coin kurang) — lanjut animal berikutnya
-        logger.info(`[${accountName}] ⬆ ${animal} skip: ${e.message.slice(0, 60)}`);
+        logToAccount(accountName, `⬆ ${animal} skip: ${e.message.slice(0, 60)}`);
       }
     }
   }
@@ -260,12 +431,26 @@ async function fullCycle(api, accountName) {
   for (const p of productPriority) {
     const amount = balances[p.key] || 0;
     if (amount > 0) {
-      const conv = await api.convertProducts(p.itemType, amount);
-      if (conv) {
-        result.convert = { itemType: p.itemType, amount, usdt: conv.usdtEarned || 0 };
-        break; // stop setelah 1 sukses
+      try {
+        const conv = await api.convertProducts(p.itemType, amount);
+        if (conv) {
+          const earned = conv.usdtEarned || 0;
+          result.convert = { itemType: p.itemType, amount, usdt: earned };
+          
+          // Dapatkan USDT balance terupdate
+          const userMe = await api.getUserMe().catch(() => null);
+          if (userMe) {
+            botState.accounts[accountName].balances.usdt = userMe.usdtBalance || 0;
+          }
+          
+          botState.accounts[accountName].stats.conversionsCount += 1;
+          botState.accounts[accountName].stats.usdtEarned += earned;
+          saveState();
+          break; // stop setelah 1 sukses
+        }
+      } catch (e) {
+        logToAccount(accountName, `💱 Convert ${p.itemType} gagal: ${e.message.slice(0, 60)}`, 'error');
       }
-      // Kalau gagal, coba produk berikutnya
     }
   }
 
@@ -279,41 +464,42 @@ function printResult(result) {
 
   // Daily coin
   if (result.dailyCoin?.claimed) {
-    logger.info(`[${name}] 🪙 Daily coin: +${result.dailyCoin.amount}`);
+    logToAccount(name, `🪙 Daily coin: +${result.dailyCoin.amount}`);
   }
 
   // Harvest
   for (const c of result.harvest.claimed) {
-    logger.info(`[${name}]   ✓ ${c.animal.padEnd(8)} claimed (level ${c.level}, product ${c.product})`);
+    logToAccount(name, `✓ ${c.animal.padEnd(8)} claimed (level ${c.level}, product ${c.product})`);
   }
   for (const s of result.harvest.skipped) {
-    logger.info(`[${name}]   ○ ${s.animal.padEnd(8)} skipped (next: ${formatTime(s.nextClaimAt)})`);
+    logToAccount(name, `○ ${s.animal.padEnd(8)} skipped (next: ${formatTime(s.nextClaimAt)})`);
   }
 
   // Upgrades
   for (const u of result.upgrades) {
-    logger.info(`[${name}]   ⬆ ${u.animal.padEnd(8)} level ${u.fromLevel} → ${u.toLevel}`);
+    logToAccount(name, `⬆ ${u.animal.padEnd(8)} level ${u.fromLevel} → ${u.toLevel}`);
   }
 
   // Convert
   if (result.convert) {
-    logger.info(`[${name}]   💱 Converted ${result.convert.amount} ${result.convert.itemType} → ${result.convert.usdt} USDT`);
+    logToAccount(name, `💱 Converted ${result.convert.amount} ${result.convert.itemType} → ${result.convert.usdt} USDT`);
   }
 
   // Summary
   const s = result.state;
-  logger.info(`[${name}]   ── Coin: ${s?.coinBalance || 0}  |  Rp ${s?.rupiahBalance || 0}`);
+  logToAccount(name, `── Coin: ${s?.coinBalance || 0}  |  Rp ${s?.rupiahBalance || 0}`);
 }
 
 // ── Dry run ──
 
 async function dryRunAccount(account) {
   const { name } = account;
+  initAccountState(name);
   const baseUrl = CONFIG.baseUrl || 'https://www.cattlefarmonly.my.id';
   const token = loadToken(name);
 
   if (!token) {
-    logger.info(`[${name}] ⚠ Tidak ada token — perlu login dulu`);
+    logToAccount(name, '⚠ Tidak ada token — perlu login dulu', 'warn');
     return;
   }
 
@@ -325,9 +511,14 @@ async function dryRunAccount(account) {
       api.getUserMe().catch(() => null),
     ]);
 
-    logger.info(`[${name}] ═══════ FARM STATUS ═══════`);
-    logger.info(`[${name}] Coin: ${status.coinBalance}  |  Rp ${status.rupiahBalance}  |  USDT: ${user?.usdtBalance || 0}`);
-    logger.info(`[${name}] Tier: ${user?.tierName || '?'}  |  Daily coin: ${user?.lastDailyCoinClaimAt ? '✅ ' + formatTime(user.lastDailyCoinClaimAt) : '❌ Belum'}`);
+    updateStateFromFarmStatus(name, status);
+    if (user) {
+      botState.accounts[name].balances.usdt = user.usdtBalance || 0;
+    }
+
+    logToAccount(name, `═══════ FARM STATUS ═══════`);
+    logToAccount(name, `Coin: ${status.coinBalance}  |  Rp ${status.rupiahBalance}  |  USDT: ${user?.usdtBalance || 0}`);
+    logToAccount(name, `Tier: ${user?.tierName || '?'}  |  Daily coin: ${user?.lastDailyCoinClaimAt ? '✅ ' + formatTime(user.lastDailyCoinClaimAt) : '❌ Belum'}`);
 
     const levels = status.levels || {};
     const farmRates = rates || {};
@@ -343,10 +534,10 @@ async function dryRunAccount(account) {
       const ready = timer?.isReady ? '●' : '○';
       const next = timer?.isReady ? 'READY' : `next ${formatTime(timer?.nextClaimAt)}`;
       const rateStr = rate ? `${(rate * 1000).toFixed(2)}m USDT` : '?';
-      logger.info(`[${name}]   ${ready} ${a.padEnd(8)} Lv.${levels[lvlKey] ?? 0}  ${balance} produk  ${rateStr}  (${next})`);
+      logToAccount(name, `  ${ready} ${a.padEnd(8)} Lv.${levels[lvlKey] ?? 0}  ${balance} produk  ${rateStr}  (${next})`);
     }
   } catch (err) {
-    logger.error(`[${name}] ${err.message}`);
+    logToAccount(name, err.message, 'error');
   }
 }
 
@@ -361,6 +552,7 @@ async function adsLoop() {
 
     for (const account of accounts) {
       const { name } = account;
+      initAccountState(name);
       const token = loadToken(name);
       if (!token) continue;
 
@@ -368,7 +560,13 @@ async function adsLoop() {
       try {
         const ar = await api.claimAdReward();
         saveToken(name, api.token);
-        logger.info(`[${name}] 📺 Ad: +${ar.coinAwarded} (balance: ${ar.newBalance})`);
+        
+        // Update state
+        botState.accounts[name].balances.coin = ar.newBalance;
+        botState.accounts[name].stats.adsClaimed += 1;
+        saveState();
+        
+        logToAccount(name, `📺 Ad: +${ar.coinAwarded} (balance: ${ar.newBalance})`);
         anySuccess = true;
         await sleep(1000);
       } catch (e) {
@@ -399,11 +597,11 @@ async function harvestLoop() {
 
     for (const acct of accounts) {
       try {
-        logger.info(`[${acct.name}] ═══════ Harvest Cycle ═══════`);
+        logToAccount(acct.name, `═══════ Harvest Cycle ═══════`);
         const result = await processAccount(acct);
         printResult(result);
       } catch (err) {
-        logger.error(`[${acct.name}] ❌ ${err.message}`);
+        logToAccount(acct.name, `❌ ${err.message}`, 'error');
       }
     }
 
@@ -412,6 +610,48 @@ async function harvestLoop() {
     logger.info(`Harvest cycle selesai dalam ${formatDuration(elapsed)}. Sleep ${formatDuration(remaining)}...`);
     await sleep(remaining);
   }
+}
+
+// ── Dashboard Web Server ──
+
+function startDashboardServer(port = 3000) {
+  const server = http.createServer((req, res) => {
+    // API status
+    if (req.method === 'GET' && req.url === '/api/status') {
+      res.writeHead(200, { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      });
+      const snapshot = {
+        startedAt: botState.startedAt,
+        uptime: Date.now() - new Date(botState.startedAt).getTime(),
+        accounts: botState.accounts
+      };
+      res.end(JSON.stringify(snapshot));
+      return;
+    }
+    
+    // Front-end Dashboard SPA
+    if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html' || req.url === '/dashboard.html')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      try {
+        const html = readFileSync(path.join(DIR, 'dashboard.html'), 'utf-8');
+        res.end(html);
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Error: dashboard.html file not found in bot directory.');
+      }
+      return;
+    }
+
+    // Default 404
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+  });
+
+  server.listen(port, () => {
+    logger.info(`Dashboard server running at http://localhost:${port}`);
+  });
 }
 
 // ── Main ──
@@ -425,6 +665,20 @@ async function main() {
   }
 
   logger.info(`Loaded ${accounts.length} account(s) from config.json`);
+
+  // Initialize state
+  for (const acct of accounts) {
+    initAccountState(acct.name);
+  }
+  
+  // Load persistent stats
+  loadState();
+
+  // Jalankan web server jika bukan dry-run / reauth
+  if (!isDryRun && !reauthFlag) {
+    const port = CONFIG.dashboardPort || 3000;
+    startDashboardServer(port);
+  }
 
   // ── DRY RUN ──
   if (isDryRun) {
@@ -457,11 +711,11 @@ async function main() {
     logger.info('Mode: ONCE');
     for (const acct of accounts) {
       try {
-        logger.info(`[${acct.name}] ═══════ Harvest Cycle ═══════`);
+        logToAccount(acct.name, `═══════ Harvest Cycle ═══════`);
         const result = await processAccount(acct);
         printResult(result);
       } catch (err) {
-        logger.error(`[${acct.name}] ❌ ${err.message}`);
+        logToAccount(acct.name, `❌ ${err.message}`, 'error');
       }
     }
     logger.info('Selesai ✓');
