@@ -91,10 +91,27 @@ Anda dapat menjalankan bot dengan beberapa mode berikut (tersedia di `package.js
 
 ### 1. Jalankan Mode Konkuren (Default)
 Mode ini akan memproses klaim iklan (setiap 1 detik jika tersedia) sekaligus melakukan panen & upgrade berkala secara terus-menerus.
+Pada mode ini, **Server Dashboard Web** otomatis diaktifkan.
 ```bash
 npm start
 ```
 
+---
+
+## Dashboard Monitoring Web 📊
+
+Saat Anda menjalankan bot dalam mode default (`npm start`), bot akan mengaktifkan server web internal. 
+
+- **Alamat URL**: `http://localhost:3003` (atau sesuai port yang diatur di `config.json` pada `"dashboardPort"`).
+- **Fitur Dashboard**:
+  - **Global Summary**: Total akun, total klaim iklan keseluruhan, total koin, dan total pendapatan USDT kumulatif.
+  - **Status Akun**: Menampilkan nama akun beserta badge status real-time (`active`, `authenticating`, `idle`, `error`).
+  - **Saldo Akun**: Rincian koin, rupiah, dan USDT per akun.
+  - **Status Peternakan (Pet Farm)**: Level hewan, jumlah produk terkumpul, dan progress bar/countdown waktu mundur hingga panen berikutnya.
+  - **Statistik Akun**: Total iklan, panen, daily coin, upgrade, dan estimasi USDT yang telah dihasilkan per akun.
+  - **Log Aktivitas**: Menampilkan log konsol khusus untuk akun tersebut dengan pewarnaan log yang interaktif.
+
+---
 ### 2. Cek Status Akun saja (Dry-Run)
 Gunakan mode ini untuk melihat statistik koin, level hewan, waktu panen berikutnya, dan saldo USDT tanpa melakukan tindakan/klaim apa pun.
 ```bash
