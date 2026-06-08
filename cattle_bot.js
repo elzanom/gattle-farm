@@ -336,9 +336,15 @@ async function fullCycle(api, accountName) {
   // ── 2. ADS CLAIM (handled by separate adsLoop — skip disini) ──
   result.adReward = { claimed: false };
 
-  // ── 3. GET FARM STATUS ──
-  let status = await api.getFarmStatus();
+  // ── 3. GET FARM STATUS & USER PROFILE ──
+  const [status, userMe] = await Promise.all([
+    api.getFarmStatus(),
+    api.getUserMe().catch(() => null)
+  ]);
   updateStateFromFarmStatus(accountName, status);
+  if (userMe) {
+    botState.accounts[accountName].balances.usdt = userMe.usdtBalance || 0;
+  }
   const timers = status.timers || [];
   result.state = status;
 
