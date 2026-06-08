@@ -1,0 +1,19 @@
+{
+  "baseUrl": "https://www.cattlefarmonly.my.id",
+  "botUsername": "cattlefarmonly12_bot",
+  "intervalMinutes": 60,
+  "accounts": [
+    {
+      "name": "Account 1",
+      "apiId": 12345678,
+      "apiHash": "your_api_hash_1_here",
+      "phoneNumber": "628xxxxxxxxxx"
+    },
+    {
+      "name": "Account 2",
+      "apiId": 87654321,
+      "apiHash": "your_api_hash_2_here",
+      "phoneNumber": "628yyyyyyyyyy"
+    }
+  ]
+}
